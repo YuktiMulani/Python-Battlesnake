@@ -2,7 +2,7 @@
 
 import random
 import typing
-
+import heapq
 
 # info is called when you create your Battlesnake on play.battlesnake.com
 # and controls your Battlesnake's appearance
@@ -15,7 +15,7 @@ def info() -> typing.Dict:
         "author": "yukine",  # TODO: Your Battlesnake Username
         "color": "#FFFFFF",  # TODO: Choose color
         "head": "evil",  # TODO: Choose head
-        "tail": "coffee",  # TODO: Choose tail
+        "tail": "round-bum",  # TODO: Choose tail
     }
 
 
@@ -28,17 +28,52 @@ def start(game_state: typing.Dict):
 def end(game_state: typing.Dict):
     print("GAME OVER\n")
 
-def is_in_bounds(x, y, game_state):
-  board_width = game_state['board']['width']
-  board_height = game_state['board']['height']
-  return 0 <= x < board_width and 0 <= y < board_height
+def calculate_distance(start, end):
+  return abs(start['x'] - end['x']) + abs(start['y'] - end['y'])
+
+def a_star_search(start, goal, is_move_safe, game_state):
+    heap = [(0, tuple(start.items()))]
+    visited = set()
+  
+    while heap:
+        cost, current = heapq.heappop(heap)
+  
+        if dict(current) == goal:
+            return cost
+  
+        if current in visited:
+            continue
+  
+        visited.add(current)
+        currdic=dict((x,y)for x,y in current)
+        for next_move in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            neighbor_dict = currdic
+            neighbor = {'x': neighbor_dict['x'] + next_move[0], 'y': neighbor_dict['y'] + next_move[1]}
+            neighbor_cost = cost + 1
 
 
+
+  
+            if (
+                0 <= neighbor['x'] < game_state['board']['width']
+                and 0 <= neighbor['y'] < game_state['board']['height']
+                and is_move_safe.get(move := get_move_direction(dict(current), neighbor))
+          ):
+              heapq.heappush(heap, (neighbor_cost + calculate_distance(neighbor, goal), tuple(neighbor.items())))
+
+    return float('inf')
+
+
+def get_move_direction(head, neighbor):
+  if head['x'] == neighbor['x']:
+      return 'up' if neighbor['y'] > head['y'] else 'down'
+  else:
+      return 'right' if neighbor['x'] > head['x'] else 'left'
 # move is called on every turn and returns your next move
 # Valid moves are "up", "down", "left", or "right"
 # See https://docs.battlesnake.com/api/example-move for available data
 def move(game_state: typing.Dict) -> typing.Dict:
-
+    print(game_state)
     is_move_safe = {
       "up": True, 
       "down": True, 
@@ -62,7 +97,7 @@ def move(game_state: typing.Dict) -> typing.Dict:
     elif my_neck["y"] > my_head["y"]:  # Neck is above head, don't move up
         is_move_safe["up"] = False
 
-    # TODO: Step 1 - Prevent your Battlesnake from moving out of bounds
+    #Prevent your Battlesnake from moving out of bounds
     board_width = game_state['board']['width']
     board_height = game_state['board']['height']
     if my_head["x"] == 0:
@@ -70,30 +105,11 @@ def move(game_state: typing.Dict) -> typing.Dict:
     if my_head["x"] == board_width - 1:
       is_move_safe["right"] = False
     if my_head["y"] == 0:
-      is_move_safe["up"] = False
+      is_move_safe["down"] = False
     if my_head["y"] == board_height - 1:
-      is_move_safe["down"] = False
+      is_move_safe["up"] = False
       
-    if my_head["x"] == 0 and my_head["y"] == 0:
-      is_move_safe["left"] = False
-      is_move_safe["up"] = False
-      is_move_safe["right"] = True
-      is_move_safe["down"] = False
-    elif my_head["x"] == board_width - 1 and my_head["y"] == 0:
-      is_move_safe["right"] = False
-      is_move_safe["up"] = False
-      is_move_safe["left"] = True
-      is_move_safe["down"] = False
-    elif my_head["x"] == 0 and my_head["y"] == board_height - 1:
-      is_move_safe["left"] = False
-      is_move_safe["down"] = False
-      is_move_safe["up"] = True
-      is_move_safe["right"] = False
-    elif my_head["x"] == board_width - 1 and my_head["y"] == board_height - 1:
-      is_move_safe["right"] = False
-      is_move_safe["down"] = False
-      is_move_safe["up"] = True
-      is_move_safe["left"] = False
+    
   
     # TODO: Step 2 - Prevent your Battlesnake from colliding with itself
     my_body = game_state['you']['body']
@@ -103,14 +119,14 @@ def move(game_state: typing.Dict) -> typing.Dict:
       if body_part['x']==my_head['x']-1and body_part['y']==my_head['y']:
         is_move_safe["left"]=False
       if body_part['x']==my_head['x'] and body_part['y']==my_head['y']+1:
-        is_move_safe["down"]=False
-      if body_part['x']==my_head['x'] and body_part['y']==my_head['y']-1:
         is_move_safe["up"]=False
+      if body_part['x']==my_head['x'] and body_part['y']==my_head['y']-1:
+        is_move_safe["down"]=False
 
     # TODO: Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
     opponents = game_state['board']['snakes']
-    for opponent in opponents:
-      for body_part in opponent['body']:
+    for snake in opponents:
+      for body_part in snake['body']:
         if body_part['x']==my_head['x']+1and body_part['y']==my_head['y']:
           is_move_safe["right"]=False
         if body_part['x']==my_head['x']-1and body_part['y']==my_head['y']:
@@ -121,47 +137,76 @@ def move(game_state: typing.Dict) -> typing.Dict:
           is_move_safe["down"]=False
 
     # Are there any safe moves left?
-    safe_moves = [move for move, is_safe in is_move_safe.items() if is_safe]
+    safe_moves = []
+    for move, isSafe in is_move_safe.items():
+        if isSafe:
+            safe_moves.append(move)
 
+    # Prioritize food if there's any on the board
+    if game_state['board']['food']:
+        # Calculate the distance to each food item using A* pathfinding
+        food_distances = {}
+        for food in game_state['board']['food']:
+            food_id = food.get('id', None)
+            if food_id is not None:
+              distance = a_star_search(my_head, food, is_move_safe, game_state)
+              food_distances[food['id']] = distance
+
+        # Sort food items by distance in ascending order
+        sorted_food = sorted(food_distances.items(), key=lambda x: x[1])
+
+        # Iterate through the sorted food items and choose the move that brings you closer to the nearest food
+        for food_id, distance in sorted_food:
+            food_coordinates = next(({'x': f['x'], 'y': f['y']} for f in game_state['board']['food'] if f['id'] == food_id), None)
+
+            if food_coordinates:
+                dx = food_coordinates['x'] - my_head['x']
+                dy = food_coordinates['y'] - my_head['y']
+
+                # Choose the move that minimizes the distance between your head and the food
+                if dx > 0 and is_move_safe["right"]:
+                    return {"move": "right"}
+
+                if dx < 0 and is_move_safe["left"]:
+                    return {"move": "left"}
+
+                if dy > 0 and is_move_safe["up"]:
+                    return {"move": "up"}
+
+                if dy < 0 and is_move_safe["down"]:
+                    return {"move": "down"}  
+    # Check for smaller snakes nearby and try to move towards them
+    for snake in game_state['board']['snakes']:
+      if len(snake['body']) < len(game_state['you']['body']):
+          # The opponent snake is smaller than your snake
+          dx = snake['head']['x'] - my_head['x']
+          dy = snake['head']['y'] - my_head['y']
+
+          # Calculate the expected size difference by the time your snake reaches the opponent's head
+          size_difference = len(snake['body']) - len(game_state['you']['body'])
+
+          # Move towards the smaller snake's head only if it is not expected to grow larger
+          if size_difference <= 0:
+              if dx > 0 and is_move_safe["right"]:
+                  return {"move": "right"}
+
+              elif dx < 0 and is_move_safe["left"]:
+                  return {"move": "left"}
+
+              elif dy > 0 and is_move_safe["up"]:
+                  return {"move": "up"}
+
+              elif dy < 0 and is_move_safe["down"]:
+                  return {"move": "down"}
+    # if no safe moves are left then take a default move
     if len(safe_moves) == 0:
-        print(f"MOVE {game_state['turn']}: No safe moves detected! Moving up")
-        return {"move": "up"}
+        print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
+        return {"move": "down"}
 
     # Choose a random move from the safe ones
-    # next_move = random.choice(safe_moves)
-    next_move = ''
-    if len(safe_moves)>0:
-      next_move=random.choice(safe_moves)
-    else:
-      next_move="up"
-
+    next_move = random.choice(safe_moves)
+    print(safe_moves)
   
-    # 
-
-    # TODO: Step 4 - Move towards food instead of random, to regain health and survive longer
-    food = game_state['board']['food']
-    if len(food) > 0:
-      sorted_food = sorted(food, key=lambda f: abs(my_head['x'] - f['x']) + abs(my_head['y'] - f['y']))
-      closest_food = sorted_food[0]
-
-      if closest_food['x'] > my_head['x']:
-          target_direction = 'right'
-      elif closest_food['x'] < my_head['x']:
-          target_direction = 'left'
-      elif closest_food['y'] > my_head['y']:
-          target_direction = 'down'
-      elif closest_food['y'] < my_head['y']:
-          target_direction = 'up'
-
-      if target_direction in safe_moves:
-          next_move = target_direction
-      else:
-          # If the target direction is not safe, choose a random safe move
-          next_move = random.choice(safe_moves)
-    else:
-      # If there is no food, choose a random safe move
-      next_move = random.choice(safe_moves)
-        
     # print(f"MOVE {game_state['turn']}: {next_move} towards {target_
 
     print(f"MOVE {game_state['turn']}: {next_move}")
